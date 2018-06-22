@@ -178,6 +178,23 @@ def http_host(req, objid, reqobj):
             ret['services'].append(svc)
     return json_response(req, ret)
 
+def http_host_groups(req, objid, reqobj):
+    global NAGIOS
+    if objid is not None:
+        return json_error(req, 'Unexpected object ID.')
+    out = {}
+    for hostgroup in NAGIOS.hostgroups:
+        out[hostgroup] = NAGIOS.hostgroups[hostgroup].for_json()
+    return json_response(req, out)
+
+def http_service_groups(req, objid, reqobj):
+    global NAGIOS
+    if objid is not None:
+        return json_error(req, 'Unexpected object ID.')
+    out = {}
+    for servicegroup in NAGIOS.servicegroups:
+        out[servicegroup] = NAGIOS.servicegroups[servicegroup].for_json()
+    return json_response(req, out)
 
 def _mkdir_recursive(self, path):
     sub_path = os.path.dirname(path)
@@ -921,7 +938,9 @@ def http_handler(req):
             'problems': http_problems,
             'status': http_status,
             'service': http_service,
-            'restart_nagios': http_restart_nagios
+            'restart_nagios': http_restart_nagios,
+            'hostgroups': http_host_groups,
+            'servicegroups': http_service_groups,
         },
         'POST': {
             'cancel_downtime': http_cancel_downtime,
@@ -998,6 +1017,24 @@ def read_status(statusfile):
             mtime = stat.st_mtime
         sleep(1)
 
+def read_objects(objectfile):
+    global NAGIOS
+    mtime = None
+    while True:
+        if not os.path.isfile(objectfile):
+            sleep(5)
+            continue
+
+        stat = os.stat(objectfile)
+        if mtime is None or stat.st_mtime > mtime:
+            try:
+                NAGIOS.getObjects(objectfile)
+            except ValueError,e:
+                print "bad object file"
+                sys.exit(-1)
+            mtime = stat.st_mtime
+        sleep(1)
+
 
 def read_log(logfile):
     '''This function reads the Nagios log file and parses events. This
@@ -1053,6 +1090,9 @@ def main(argv):
     parser.add_option('-s', '--status-file', dest='statusfile', metavar='FILE',
             default='/var/cache/nagios3/status.dat', help='The file that contains '
             'the Nagios status.')
+    parser.add_option('-t', '--object-file', dest='objectfile', metavar='FILE',
+            default='/var/cache/nagios3/objects.cache', help='The file that contains '
+            'the Nagios objects.')
     parser.add_option('-c', '--command-file', dest='commandfile', metavar='FILE',
             default='/var/lib/nagios3/rw/nagios.cmd', help='The file to write '
             'Nagios commands to.')
@@ -1096,6 +1136,8 @@ def main(argv):
     if os.path.isfile(options.logfile):
         LOG_ENABLED = True
         app.add_loop(Loop(read_log, options.logfile), keep_alive=True)
+    if os.path.isfile(options.objectfile):
+        app.add_loop(Loop(read_objects, options.objectfile), keep_alive=True)
     app.run()
     return 1
 

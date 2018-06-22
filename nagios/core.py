@@ -20,6 +20,8 @@ class Nagios:
         self.services = {}
         self.comments = {}
         self.downtimes = {}
+        self.hostgroups = {}
+        self.servicegroups = {}
         if statusfile is not None:
             self._update(statusfile)
 
@@ -125,6 +127,37 @@ class Nagios:
             out[host] = self.hosts[host].for_json()
         return out
 
+    def getObjects(self, objectfile):
+        # Generator to get the next status stanza.
+        def next_stanza(f):
+            cur = None
+            for line in f:
+                line = line.strip()
+                if line.endswith('{'):
+                   if cur is not None:
+                       yield cur
+                   cur = {'type': line.split(' ', 2)[1]}
+                elif "#" in line or "}" in line or line == "":
+                   pass
+                else:
+                   key, val = line.split("\t", 1)
+                   cur[key] = val
+#               elif "#" in line:
+#                   if not line.find("NAGIOS STATE RETENTION FILE"):
+#                       raise ValueError("You appear to have used the state retention file instead of the status file. Please change your arguments and try again.")
+            if cur is not None:
+                yield cur
+
+        f = open(objectfile, 'r')
+        for obj in next_stanza(f):
+           host = obj['host_name'] if 'host_name' in obj else None
+           service = obj['service_description'] if 'service_description' in obj else None
+
+           if obj['type'] == 'hostgroup':
+               self.hostgroups[obj['hostgroup_name']] = HostGroup(obj)
+           elif obj['type'] == 'servicegroup':
+               self.servicegroups[obj['servicegroup_name']] = ServiceGroup(obj)
+        f.close()
 
 class NagiosObject:
     '''A base class that does a little fancy parsing.  That's it.
@@ -286,3 +319,29 @@ class Downtime(NagiosObject):
             'end_time', 'triggered_by', 'fixed', 'duration', 'author',
             'comment']
         self.downtime_id = int(self.downtime_id)
+
+class HostGroup(NagiosObject):
+    def __init__(self, obj):
+        NagiosObject.__init__(self, obj)
+        self.essential_keys = ["alias", "members"]
+        if hasattr(self, "members"):
+            self.members = self.members.split(",")
+        else:
+            self.members = []
+
+class ServiceGroup(NagiosObject):
+    def __init__(self, obj):
+        NagiosObject.__init__(self, obj)
+        self.essential_keys = ["alias", "members"]
+        if hasattr(self, "members"):
+            members = {}
+            for i, m in enumerate(self.members.split(",")):
+                if i % 2 == 0:
+                    host = m
+                    if host not in members:
+                        members[host] = []
+                else:
+                   members[host].append(m)
+            self.members = members
+        else:
+            self.members = []
