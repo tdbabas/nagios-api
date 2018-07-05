@@ -42,6 +42,9 @@ class Nagios:
                 elif '=' in line:
                     key, val = line.split('=', 1)
                     if key == "performance_data":
+			# store the raw performance data as well
+			cur["raw_performance_data"] = val
+
                         # performance_data is special
                         performance_data = {}
                         split = val.split(' ')
