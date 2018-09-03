@@ -8,7 +8,7 @@ class Nagios:
     from the status file that Nagios maintains.
 
     '''
-    def __init__(self, statusfile=None):
+    def __init__(self, statusfile=None, objectfile=None):
         '''Create a new Nagios state store.  One argument, statusfile, is used to
         indicate where the status file is.  This object is intended to be read-only
         once it has been created.
@@ -22,16 +22,18 @@ class Nagios:
         self.downtimes = {}
         self.hostgroups = {}
         self.servicegroups = {}
+        self.contactgroups = {}
+        self.contacts = {}
         if statusfile is not None:
-            self._update(statusfile)
+            self._update(statusfile, objectfile)
 
-    def _update(self, statusfile):
+    def _update(self, statusfile, objectfile):
         '''Read the status file from Nagios and parse it.  Responsible for building
         our internal representation of the tree.
 
         '''
         # Generator to get the next status stanza.
-        def next_stanza(f):
+        def next_status_stanza(f):
             cur = None
             for line in f:
                 line = line.strip()
@@ -68,8 +70,28 @@ class Nagios:
             if cur is not None:
                 yield cur
 
+        # Generator to get the next status stanza.
+        def next_object_stanza(f):
+            cur = None
+            for line in f:
+                line = line.strip()
+                if line.endswith('{'):
+                   if cur is not None:
+                       yield cur
+                   cur = {'type': line.split(' ', 2)[1]}
+                elif "#" in line or "}" in line or line == "":
+                   pass
+                else:
+                   key, val = line.split("\t", 1)
+                   cur[key] = val
+#               elif "#" in line:
+#                   if not line.find("NAGIOS STATE RETENTION FILE"):
+#                       raise ValueError("You appear to have used the state retention file instead of the status file. Please change your arguments and try again.")
+            if cur is not None:
+                yield cur
+
         f = open(statusfile, 'r')
-        for obj in next_stanza(f):
+        for obj in next_status_stanza(f):
             host = obj['host_name'] if 'host_name' in obj else None
             service = obj['service_description'] if 'service_description' in obj else None
 
@@ -88,6 +110,31 @@ class Nagios:
             elif obj['type'] == 'programstatus':
                 self.program = Program(obj)
         f.close()
+
+        if objectfile is not None:
+            f = open(objectfile, 'r')
+            for obj in next_object_stanza(f):
+               host = obj['host_name'] if 'host_name' in obj else None
+               service = obj['service_description'] if 'service_description' in obj else None
+               if obj['type'] == 'hostgroup':
+                   self.hostgroups[obj['hostgroup_name']] = HostGroup(obj)
+               elif obj['type'] == 'servicegroup':
+                   self.servicegroups[obj['servicegroup_name']] = ServiceGroup(obj)
+               elif obj['type'] == 'contactgroup':
+                   self.contactgroups[obj['contactgroup_name']] = ContactGroup(obj)
+               elif obj['type'] == 'contact':
+                   self.contacts[obj['contact_name']] = Contact(obj)
+               elif obj['type'] == 'service':
+                   if "contacts" in obj:
+                       self.services[host][service].contacts = obj['contacts']
+                   else:
+                       self.services[host][service].contacts = ""
+               elif obj['type'] == 'host':
+                   if "contacts" in obj:
+                       self.hosts[host].contacts = obj['contacts']
+                   else:
+                       self.hosts[host].contacts = ""
+            f.close()
 
         for host in self.services:
             for s in self.services[host].itervalues():
@@ -348,3 +395,17 @@ class ServiceGroup(NagiosObject):
             self.members = members
         else:
             self.members = []
+
+class ContactGroup(NagiosObject):
+    def __init__(self, obj):
+        NagiosObject.__init__(self, obj)
+        self.essential_keys = ["alias", "members"]
+        if hasattr(self, "members"):
+            self.members = self.members.split(",")
+        else:
+            self.members = []
+
+class Contact(NagiosObject):
+    def __init__(self, obj):
+        NagiosObject.__init__(self, obj)
+        self.essential_keys = ["alias", "email"]
