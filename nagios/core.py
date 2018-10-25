@@ -408,4 +408,4 @@ class ContactGroup(NagiosObject):
 class Contact(NagiosObject):
     def __init__(self, obj):
         NagiosObject.__init__(self, obj)
-        self.essential_keys = ["contact_name", "alias", "email"]
+        self.essential_keys = ["alias", "email"]
