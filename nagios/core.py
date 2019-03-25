@@ -125,15 +125,11 @@ class Nagios:
                elif obj['type'] == 'contact':
                    self.contacts[obj['contact_name']] = Contact(obj)
                elif obj['type'] == 'service':
-                   if "contacts" in obj:
-                       self.services[host][service].contacts = obj['contacts']
-                   else:
-                       self.services[host][service].contacts = ""
+                   for i in obj:
+                       self.services[host][service].add_attribute(i, obj[i])
                elif obj['type'] == 'host':
-                   if "contacts" in obj:
-                       self.hosts[host].contacts = obj['contacts']
-                   else:
-                       self.hosts[host].contacts = ""
+                   for i in obj:
+                       self.hosts[host].add_attribute(i, obj[i])
             f.close()
 
         for host in self.services:
@@ -220,6 +216,9 @@ class NagiosObject:
         self.host = getattr(self, 'host_name', None)
         self.service = getattr(self, 'service_description', None)
         self.essential_keys = []
+
+    def add_attribute(self, attribute, value):
+        setattr(self, attribute, value)
 
     def for_json(self):
         '''Return a dict of ourselves that is ready to be serialized out
