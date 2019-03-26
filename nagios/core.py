@@ -131,7 +131,7 @@ class Nagios:
                        self.services[host][service].contacts = ""
                    for i in obj:
                        try:
-                           self.services[host][service].get_atribute(i)
+                           self.services[host][service].get_attribute(i)
                        except AttributeError:
                            self.services[host][service].set_attribute(i, obj[i])
                elif obj['type'] == 'host':
